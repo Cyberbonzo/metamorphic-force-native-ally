@@ -89,14 +89,39 @@ int mforce_init(const char *directory) {
 // Boot tests, the story, title, player select, Hall of Fame and logo screens
 // only draw the 288 arcade columns; whatever the extra columns hold there is
 // stale tile data. Byte 0x2027c1 of main RAM is 32 while a stage is running
-// (attract demos, play, continue, stage maps) and 0 on those screens. RAM is
-// stored byte-swapped by FBNeo on little-endian hosts.
+// (attract demos, play, continue, stage maps) and 0 on those screens. The
+// stage-clear emblem runs inside a stage; byte 0x202a16 is 3 only there.
+// Left of camera X 0 (word 0x202824) there is no map: the extra columns that
+// fall there are black as well. RAM is stored byte-swapped by FBNeo on
+// little-endian hosts; aligned words read natively.
 static void hide_unused_margins(uint32_t *pixels) {
-    if (!MFORCE_MARGIN || mforce_main_ram()[0x27c1 ^ 1] == 32) return;
+    if (!MFORCE_MARGIN) return;
+    const UINT8 *ram = mforce_main_ram();
+    int left = MFORCE_MARGIN, right = MFORCE_MARGIN;
+    if (ram[0x27c1 ^ 1] == 32 && ram[0x2a16 ^ 1] != 3) {
+        const int camera = *reinterpret_cast<const INT16 *>(ram + 0x2824);
+        left = std::clamp(MFORCE_MARGIN - camera, 0, static_cast<int>(MFORCE_MARGIN));
+        right = 0;
+    }
     for (int y = 0; y < MFORCE_HEIGHT; ++y) {
         uint32_t *row = pixels + y * MFORCE_WIDTH;
-        std::fill(row, row + MFORCE_MARGIN, 0u);
-        std::fill(row + MFORCE_WIDTH - MFORCE_MARGIN, row + MFORCE_WIDTH, 0u);
+        std::fill(row, row + left, 0u);
+        std::fill(row + MFORCE_WIDTH - right, row + MFORCE_WIDTH, 0u);
+    }
+    // Some sections (the cliff climb, fixed rooms) are only 288 columns wide:
+    // their extra columns show nothing but the backdrop colour. When nearly
+    // the whole side is one colour, that colour becomes black; sprites that
+    // cross into it stay visible.
+    for (const int x0 : {0, static_cast<int>(MFORCE_WIDTH - MFORCE_MARGIN)}) {
+        const uint32_t backdrop = pixels[(MFORCE_HEIGHT / 2) * MFORCE_WIDTH + x0 + MFORCE_MARGIN / 2];
+        int same = 0;
+        for (int y = 0; y < MFORCE_HEIGHT; ++y)
+            for (int x = x0; x < x0 + MFORCE_MARGIN; ++x)
+                same += pixels[y * MFORCE_WIDTH + x] == backdrop;
+        if (!backdrop || same * 100 < MFORCE_HEIGHT * MFORCE_MARGIN * 97) continue;
+        for (int y = 0; y < MFORCE_HEIGHT; ++y)
+            for (int x = x0; x < x0 + MFORCE_MARGIN; ++x)
+                if (pixels[y * MFORCE_WIDTH + x] == backdrop) pixels[y * MFORCE_WIDTH + x] = 0;
     }
 }
 

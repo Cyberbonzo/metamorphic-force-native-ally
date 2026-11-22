@@ -39,7 +39,14 @@ O programa principal mantém o X de tela dos personagens (palavra em `(8,A0)`) d
 - **Estados que dependem da borda.** Dois estados do jogador (atingido ou arremessado, em `0x05d818` e `0x05d992`) só avançam quando o X de tela está entre 0 e 276. Com os limites antigos isso sempre acontecia; com os novos, o jogador podia ficar imóvel encostado na borda direita. A faixa passou a ser [−48, 324]. O estado que termina ao tocar a borda (`0x05d8d6`) usa os mesmos limites dinâmicos da trava, por meio de uma segunda rotina em `0x0F0100`. As marcas de "jogador na borda" (`0x058c28`) foram ampliadas com a tela.
 - **Outros personagens (`0x070ae0` e `0x070b52`).** Os intervalos [16, 272] e [32, 256] ganham 48 pixels de cada lado. As comparações passam a ter sinal, porque o limite esquerdo fica negativo.
 
-A variável que distingue fase de tela fixa é o byte `0x2027c1` (32 durante uma fase).
+## Laterais sem cenário
+
+Algumas telas só desenham as 288 colunas originais, e as laterais extras ficariam com restos de outras cenas. O adaptador da placa (`board/mforce_board.cpp`) pinta de preto:
+
+- as duas laterais fora das fases, quando o byte `0x2027c1` da RAM não vale 32 (testes, história, título, seleção, Hall of Fame, logotipo);
+- as duas laterais na tela do emblema entre fases, quando o byte `0x202a16` vale 3;
+- as colunas à esquerda do início do mapa, quando a câmera (`0x202824`) está a menos de 48 pixels da origem;
+- a cor de fundo de uma lateral que tem praticamente uma só cor (97% dos pixels), como na escalada do penhasco, mantendo visíveis os personagens que entram nela.
 
 ## Como funciona
 
