@@ -45,8 +45,14 @@ Algumas telas só desenham as 288 colunas originais, e as laterais extras ficari
 
 - as duas laterais fora das fases, quando o byte `0x2027c1` da RAM não vale 32 (testes, história, título, seleção, Hall of Fame, logotipo);
 - as duas laterais na tela do emblema entre fases, quando o byte `0x202a16` vale 3;
-- as colunas à esquerda do início do mapa, quando a câmera (`0x202824`) está a menos de 48 pixels da origem;
+- nas colunas à esquerda do início do mapa (câmera `0x202824` a menos de 48 pixels da origem), a cor de fundo predominante, mantendo visíveis os personagens;
 - a cor de fundo de uma lateral que tem praticamente uma só cor (97% dos pixels), como na escalada do penhasco, mantendo visíveis os personagens que entram nela.
+
+## Mapa nas colunas extras
+
+Os tilemaps do K056832 são anéis de 512 pixels. A cada 32 pixels de câmera o jogo copia um bloco de 32 pixels 384 pixels à frente (`0x0117c6`, `0x011858`), de modo que o anel guarda o mapa de câmera − 96 a câmera + 416: a faixa direita extra sempre tem o mapa certo, e a esquerda também enquanto a câmera avança. Quando a câmera recua mais de 48 pixels, a faixa esquerda mostraria blocos do lado oposto do anel. As duas rotinas passaram a copiar também os dois blocos imediatamente à esquerda da câmera; o lugar deles no anel fica fora da janela adiantada. As arenas da floresta (tabelas de segmento `0x010b34` e `0x0111fc`) desligavam a cópia porque a câmera cabia no anel com a tela de 288 colunas; elas passaram a usar a mesma rotina dos trechos anteriores (`0x010ca8`).
+
+Limites conhecidos: algumas camadas são fixas na tela e foram desenhadas só para 288 colunas (a borda de pedra da arena da floresta), e o muro do coliseu é desenhado pelo PSAC, cujas linhas têm 256 pixels de origem. Nesses pontos não existe arte para as colunas extras. O canto superior esquerdo do céu da fase 1 também pode mostrar alguns blocos fora de lugar.
 
 ## Como funciona
 

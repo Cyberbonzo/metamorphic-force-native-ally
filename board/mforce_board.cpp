@@ -91,17 +91,31 @@ int mforce_init(const char *directory) {
 // stale tile data. Byte 0x2027c1 of main RAM is 32 while a stage is running
 // (attract demos, play, continue, stage maps) and 0 on those screens. The
 // stage-clear emblem runs inside a stage; byte 0x202a16 is 3 only there.
-// Left of camera X 0 (word 0x202824) there is no map: the extra columns that
-// fall there are black as well. RAM is stored byte-swapped by FBNeo on
+// Left of camera X 0 (word 0x202824) there is no map; in the columns that fall
+// there, the colour covering most of them (the backdrop) becomes black, so
+// characters walking in stay visible. RAM is stored byte-swapped by FBNeo on
 // little-endian hosts; aligned words read natively.
+static void blacken_dominant(uint32_t *pixels, int x0, int x1) {
+    std::unordered_map<uint32_t, int> count;
+    for (int y = 0; y < MFORCE_HEIGHT; y += 2)
+        for (int x = x0; x < x1; x += 2) ++count[pixels[y * MFORCE_WIDTH + x]];
+    uint32_t dominant = 0;
+    int best = 0;
+    for (const auto &[colour, n] : count) if (n > best) { best = n; dominant = colour; }
+    for (int y = 0; y < MFORCE_HEIGHT; ++y)
+        for (int x = x0; x < x1; ++x)
+            if (pixels[y * MFORCE_WIDTH + x] == dominant) pixels[y * MFORCE_WIDTH + x] = 0;
+}
+
 static void hide_unused_margins(uint32_t *pixels) {
     if (!MFORCE_MARGIN) return;
     const UINT8 *ram = mforce_main_ram();
     int left = MFORCE_MARGIN, right = MFORCE_MARGIN;
     if (ram[0x27c1 ^ 1] == 32 && ram[0x2a16 ^ 1] != 3) {
+        left = right = 0;
         const int camera = *reinterpret_cast<const INT16 *>(ram + 0x2824);
-        left = std::clamp(MFORCE_MARGIN - camera, 0, static_cast<int>(MFORCE_MARGIN));
-        right = 0;
+        const int outside = std::clamp(MFORCE_MARGIN - camera, 0, static_cast<int>(MFORCE_MARGIN));
+        if (outside) blacken_dominant(pixels, 0, outside);
     }
     for (int y = 0; y < MFORCE_HEIGHT; ++y) {
         uint32_t *row = pixels + y * MFORCE_WIDTH;

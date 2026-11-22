@@ -110,7 +110,39 @@ def widen_screen_bounds(program, margin):
     def jsr(address):
         return "4eb9" + address.to_bytes(4, "big").hex()
 
-    patches = [
+    # Horizontal tilemap streaming (0x0117c6, 0x011858): whenever a layer's X
+    # crosses 32 pixels the game copies the one 32-pixel block 384 pixels ahead
+    # of it into the 512-pixel ring, so the ring holds [x - 96, x + 416). After
+    # the camera turns back by more than 48 pixels (boss arenas) the extra left
+    # columns would show blocks of the far right. Each call now also copies the
+    # two blocks just left of the layer's X; their ring slots lie outside the
+    # ahead window, so nothing the game needs is overwritten. Positions below
+    # 64 are skipped: there is no map left of the stage origin.
+    streams = []
+    for entry, wrapper in ((0x0117c6, 0x0F0200), (0x011858, 0x0F0300)):
+        body = entry + 6                                  # after lea $300000,a0
+        again = ("41f900300000" + jsr(body)               # lea $300000,a0; jsr body
+                 + "4cd70610")                            # movem.l (a7),d4/a1-a2
+        routine = ("48e70860"                             # movem.l d4/a1-a2,-(a7)
+                   + again
+                   + "0c440040" "6d24"                    # cmpi.w #64,d4; blt.s done
+                   + "044401c0" + again                   # subi.w #448,d4 -> block at x-64
+                   + "044401a0" + "41f900300000" + jsr(body)  # subi.w #416,d4 -> block at x-32
+                   + "4cdf0610" "4e75")                   # done: movem.l (a7)+,...; rts
+        routine = bytes.fromhex(routine)
+        if any(code[wrapper:wrapper + len(routine)]):
+            raise ValueError("Helper area is not empty")
+        code[wrapper:wrapper + len(routine)] = routine
+        streams.append((entry, "41f900300000", "4ef9" + wrapper.to_bytes(4, "big").hex()))
+
+    # The forest arenas (segment tables at 0x010b34 and 0x0111fc) stop tile
+    # streaming: their camera range fits the ring for a 288-pixel screen. They
+    # keep streaming like the preceding segments (0x010ca8, same map), so the
+    # wider screen does not show blocks from beyond the arena.
+    arena_tables = [(0x010b42 + 4 * segment, "00010d3c", "00010ca8") for segment in (15, 16)]
+    arena_tables += [(0x01120a + 4 * segment, "00010d3c", "00010ca8") for segment in (5, 6)]
+
+    patches = streams + arena_tables + [
         # tst.w (8,a0); bpl -> jsr clamp; bra.s 0x058bb8 (the Y limits)
         (0x058b80, "4a6800086a00000a", jsr(clamp) + "6030"),
         # Player at an edge: bits in 0x202b8a/0x202b8b at X <= 0x30 / >= 0xf0.
