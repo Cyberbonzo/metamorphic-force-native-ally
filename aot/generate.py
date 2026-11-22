@@ -66,30 +66,73 @@ def widen_screen_bounds(program, margin):
     # of the level is empty map, so the player stops where the arcade did.
     # The longer routine lives in the unused 0x080000-0x0fffff ROM window,
     # which the translator covers like the rest of the program space.
-    helper = 0x0F0000
-    routine = (
-        "48e7c000"                          # movem.l d0-d1,-(a7)
+    left_limit = (                          # d1 = 0x20 - min(margin, max(camera, 0))
         "30390020 2824"                     # move.w  $202824.l,d0  (camera X)
         "0c40" + imm(margin) +              # cmpi.w  #margin,d0
         "6f04"                              # ble.s   +4
         "303c" + imm(margin) +              # move.w  #margin,d0
         "4a40" "6c02" "7000"                # tst.w d0; bge.s +2; moveq #0,d0
         "323c0020" "9240"                   # move.w #$20,d1; sub.w d0,d1
+    )
+    right_limit = imm(0xf4 + margin)
+    clamp = 0x0F0000
+    clamp_routine = (
+        "48e7c000"                          # movem.l d0-d1,-(a7)
+        + left_limit +
         "b2680008" "6d08"                   # cmp.w (8,a0),d1; blt.s +8
         "31410008" "42680012"               # move.w d1,(8,a0); clr.w ($12,a0)
-        "0c68" + imm(0xf4 + margin) + "0008"  # cmpi.w #right,(8,a0)
+        "0c68" + right_limit + "0008"       # cmpi.w #right,(8,a0)
         "6f0a"                              # ble.s +10
-        "317c" + imm(0xf4 + margin) + "0008"  # move.w #right,(8,a0)
+        "317c" + right_limit + "0008"       # move.w #right,(8,a0)
         "42680012"                          # clr.w   ($12,a0)
         "4cdf0003"                          # movem.l (a7)+,d0-d1
         "4e75"                              # rts
-    ).replace(" ", "")
-    if any(code[helper:helper + len(routine) // 2]):
-        raise ValueError("Helper area is not empty")
-    code[helper:helper + len(routine) // 2] = bytes.fromhex(routine)
+    )
+    # A player state (0x05d8c8) ends when the player meets either limit. The
+    # test returns Z=1 while the player is strictly between the current limits.
+    inside = 0x0F0100
+    inside_routine = (
+        "48e7c000"                          # movem.l d0-d1,-(a7)
+        + left_limit +
+        "30280008" "b041"                   # move.w (8,a0),d0; cmp.w d1,d0
+        "6f0e"                              # ble.s  outside
+        "0c40" + right_limit +              # cmpi.w #right,d0
+        "6c08"                              # bge.s  outside
+        "7000" "4cdf0003" "4e75"            # moveq #0,d0 (Z=1); restore; rts
+        "7001" "4cdf0003" "4e75"            # outside: moveq #1,d0 (Z=0); restore; rts
+    )
+    for address, routine in ((clamp, clamp_routine), (inside, inside_routine)):
+        routine = bytes.fromhex(routine.replace(" ", ""))
+        if any(code[address:address + len(routine)]):
+            raise ValueError("Helper area is not empty")
+        code[address:address + len(routine)] = routine
+
+    def jsr(address):
+        return "4eb9" + address.to_bytes(4, "big").hex()
+
     patches = [
-        # tst.w (8,a0); bpl -> jsr helper; bra.s 0x058bb8 (the Y limits)
-        (0x058b80, "4a6800086a00000a", "4eb9" + helper.to_bytes(4, "big").hex() + "6030"),
+        # tst.w (8,a0); bpl -> jsr clamp; bra.s 0x058bb8 (the Y limits)
+        (0x058b80, "4a6800086a00000a", jsr(clamp) + "6030"),
+        # Player at an edge: bits in 0x202b8a/0x202b8b at X <= 0x30 / >= 0xf0.
+        (0x058c24, "6b00000c", "4e714e71"),                 # bmi -> nop nop
+        (0x058c28, "0c6800300008", "0c68" + imm(0x30 - margin) + "0008"),
+        (0x058c2e, "6200000c", "6e00000c"),                 # bhi -> bgt
+        (0x058c3c, "0c6800f00008", "0c68" + imm(0xf0 + margin) + "0008"),
+        (0x058c42, "65000008", "6d000008"),                 # bcs -> blt
+        # Two player states wait while X is outside (0, 0x114), which the old
+        # limits never allowed; with the wider limits the player would stay
+        # frozen at the right edge.
+        (0x05d818, "0c6800000008", "0c68" + imm(-margin) + "0008"),
+        (0x05d81e, "6300005a", "6f00005a"),                 # bls -> ble
+        (0x05d822, "0c6801140008", "0c68" + imm(0x114 + margin) + "0008"),
+        (0x05d828, "64000050", "6c000050"),                 # bcc -> bge
+        (0x05d992, "0c6800000008", "0c68" + imm(-margin) + "0008"),
+        (0x05d998, "63000026", "6f000026"),                 # bls -> ble
+        (0x05d99c, "0c6801140008", "0c68" + imm(0x114 + margin) + "0008"),
+        (0x05d9a2, "6400001c", "6c00001c"),                 # bcc -> bge
+        # cmpi/bls/cmpi/bcc against [0x20, 0xf4] -> jsr inside; beq.s rts; bra.s on
+        (0x05d8d6, "0c68002000086300000e0c6800f4000864000004",
+         jsr(inside) + "670c" "600c" + "4e71" * 5),
         # 0x070ae0: other actors. Screen X limited to [0x10, 0x110].
         (0x070aea, "6b00000c", "4e714e71"),                 # bmi -> nop nop
         (0x070aee, "0c6800100008", "0c68" + imm(0x10 - margin) + "0008"),

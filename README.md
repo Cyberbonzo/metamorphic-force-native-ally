@@ -36,6 +36,7 @@ O script aceita o set *merged* `metamrph.zip`, ou o set pai junto com `metamrpha
 O programa principal mantém o X de tela dos personagens (palavra em `(8,A0)`) dentro da tela original. As adaptações, aplicadas somente ao código traduzido e conferidas byte a byte antes da troca, ficam em `aot/generate.py`:
 
 - **Jogadores (`0x058b80`).** O intervalo era [32, 244]. A nova rotina, colocada em `0x0F0000` (janela de ROM sem uso), aceita [32 − m, 244 + 48], com m = min(48, câmera) e a câmera lida em `0x202824`. Assim o jogador alcança as duas bordas sem entrar na área sem mapa do começo da fase.
+- **Estados que dependem da borda.** Dois estados do jogador (atingido ou arremessado, em `0x05d818` e `0x05d992`) só avançam quando o X de tela está entre 0 e 276. Com os limites antigos isso sempre acontecia; com os novos, o jogador podia ficar imóvel encostado na borda direita. A faixa passou a ser [−48, 324]. O estado que termina ao tocar a borda (`0x05d8d6`) usa os mesmos limites dinâmicos da trava, por meio de uma segunda rotina em `0x0F0100`. As marcas de "jogador na borda" (`0x058c28`) foram ampliadas com a tela.
 - **Outros personagens (`0x070ae0` e `0x070b52`).** Os intervalos [16, 272] e [32, 256] ganham 48 pixels de cada lado. As comparações passam a ter sinal, porque o limite esquerdo fica negativo.
 
 A variável que distingue fase de tela fixa é o byte `0x2027c1` (32 durante uma fase).
@@ -55,6 +56,6 @@ As ferramentas e adaptações estão neste repositório. As imagens dos chips e 
 - **Reprodutibilidade.** Uma compilação limpa pelo `build.sh` reproduziu os mesmos hashes de vídeo e de áudio.
 - **Save.** Pelo atalho da Steam, o jogo foi encerrado no meio de uma luta e reaberto; a cena, o placar e o cronômetro voltaram iguais.
 - **No ROG Ally.** O atalho abriu o executável em 1920×1080, o controle Elite 2 foi reconhecido e o áudio saiu pelo PipeWire. Em 80 segundos de partida a apresentação ficou em 60,00 fps, com intervalo máximo de 16,85 ms entre quadros e nenhum quadro atrasado, inclusive durante dois saves automáticos.
-- **Limites.** Com as mesmas entradas, o X de tela do jogador alcançou −16 (esquerda, câmera avançada) e 292 (direita); no início da fase parou em 32, como no arcade. Uma partida automática de 40.000 quadros passou pelas fases 1 a 3 sem erro.
+- **Limites.** Com as mesmas entradas, o X de tela do jogador alcançou −16 (esquerda, câmera avançada) e 292 (direita); no início da fase parou em 32, como no arcade. Uma partida automática de 40.000 quadros passou pelas fases 1 a 3 sem erro. A partir do save em que o jogador ficou imóvel na borda direita, a versão corrigida retomou o controle em 30 quadros; em três sequências aleatórias de entradas, o maior tempo no mesmo estado e posição foi de 129 quadros (animação de queda).
 
 Ainda não verificado: as fases 4 em diante jogadas manualmente, o fim de cada fase (a área à direita do último trecho do mapa) e o modo para dois jogadores. A verificação de 16.519.004 instruções idênticas vale para a compilação 4:3 (`MFORCE_MARGIN=0`), que não altera o programa; a compilação 16:9 difere dela apenas nas rotinas de limite acima.
